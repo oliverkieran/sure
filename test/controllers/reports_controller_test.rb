@@ -1036,7 +1036,114 @@ class ReportsControllerTest < ActionDispatch::IntegrationTest
     assert_select "form[action=?]", settings_api_keys_path, count: 0
   end
 
+  test "the account filter limits the report to the selected accounts" do
+    selected, other, selected_category, other_category = two_accounts_with_spending
+
+    get reports_path(period_type: :monthly, account_ids: [ selected.id ])
+    assert_response :ok
+
+    assert_select "tr[data-category='category-#{selected_category.id}']"
+    assert_select "tr[data-category='category-#{other_category.id}']", count: 0
+    assert_includes response.body, "1,234.56"
+    assert_not_includes response.body, "6,543.21"
+  end
+
+  test "the account filter keeps the older filter_account_id form working" do
+    selected, _, selected_category, other_category = two_accounts_with_spending
+
+    get reports_path(period_type: :monthly, filter_account_id: selected.id)
+    assert_response :ok
+
+    assert_select "tr[data-category='category-#{selected_category.id}']"
+    assert_select "tr[data-category='category-#{other_category.id}']", count: 0
+  end
+
+  test "the account filter ignores an account outside the user's finances" do
+    own, _, own_category, _ = two_accounts_with_spending
+    theirs = @family.accounts.create!(owner: users(:family_member), name: "Their Private Account", balance: 0, currency: "USD", accountable: Depository.new)
+    their_category = @family.categories.create!(name: "Their Private Spending", color: "#333333")
+    create_transaction(account: theirs, name: "Their purchase", amount: 777, category: their_category)
+
+    [ { account_ids: [ theirs.id ] }, { filter_account_id: theirs.id } ].each do |filter|
+      get reports_path(period_type: :monthly, **filter)
+      assert_response :ok
+
+      assert_select "tr[data-category='category-#{their_category.id}']", count: 0
+      assert_select "tr[data-category='category-#{own_category.id}']"
+      assert_includes response.body, own.name
+      assert_not_includes response.body, theirs.name
+    end
+  end
+
+  test "the account filter applies to the CSV export" do
+    selected, _, selected_category, other_category = two_accounts_with_spending
+
+    get export_transactions_reports_path(
+      format: :csv,
+      period_type: :monthly,
+      start_date: Date.current.beginning_of_month,
+      end_date: Date.current.end_of_month,
+      account_ids: [ selected.id ]
+    )
+
+    assert_response :ok
+    assert_match selected_category.name, response.body
+    assert_no_match other_category.name, response.body
+  end
+
+  test "links on a filtered report keep the account filter" do
+    selected, _, selected_category, _ = two_accounts_with_spending
+    start_date = Date.current.beginning_of_month
+    end_date = Date.current.end_of_month
+
+    get reports_path(period_type: :monthly, start_date: start_date, end_date: end_date, account_ids: [ selected.id ])
+    assert_response :ok
+
+    assert_select "a[href=?]", print_reports_path(period_type: :monthly, start_date: start_date, end_date: end_date, account_ids: [ selected.id ])
+    assert_select "a[href=?]", reports_path(period_type: :quarterly, account_ids: [ selected.id ])
+    assert_select "a[href=?]", export_transactions_reports_path(period_type: :monthly, start_date: start_date, end_date: end_date, account_ids: [ selected.id ], format: :csv)
+
+    category_href = transactions_path(q: { categories: [ selected_category.name ], start_date: start_date, end_date: end_date, account_ids: [ selected.id ] })
+    assert_select "tr[data-category='category-#{selected_category.id}'] a[href=?]", category_href
+  end
+
+  test "sections that ignore the account filter say so while it is on" do
+    selected, _, _, _ = two_accounts_with_spending
+    all_accounts = I18n.t("reports.index.account_filter.all_accounts")
+
+    get reports_path(period_type: :monthly, account_ids: [ selected.id ])
+    assert_select "[data-section-key=net_worth] summary", text: /#{all_accounts}/
+    assert_select "[data-section-key=trends_insights] summary", text: /#{all_accounts}/, count: 0
+
+    get reports_path(period_type: :monthly)
+    assert_select "[data-section-key=net_worth] summary", text: /#{all_accounts}/, count: 0
+  end
+
+  test "the account filter lists the accounts in the user's finances" do
+    selected, other, _, _ = two_accounts_with_spending
+    theirs = @family.accounts.create!(owner: users(:family_member), name: "Their Hidden Account", balance: 0, currency: "USD", accountable: Depository.new)
+
+    get reports_path(period_type: :monthly, account_ids: [ selected.id ])
+    assert_response :ok
+
+    assert_select "input[type=checkbox][name='account_ids[]'][value=?][checked]", selected.id
+    assert_select "input[type=checkbox][name='account_ids[]'][value=?]:not([checked])", other.id
+    assert_select "input[type=checkbox][name='account_ids[]'][value=?]", theirs.id, count: 0
+  end
+
   private
+    def two_accounts_with_spending
+      selected = @family.accounts.create!(owner: @user, name: "Filter Selected Account", balance: 0, currency: "USD", accountable: Depository.new)
+      other = @family.accounts.create!(owner: @user, name: "Filter Other Account", balance: 0, currency: "USD", accountable: Depository.new)
+      selected_category = @family.categories.create!(name: "Filter Selected Spending", color: "#111111")
+      other_category = @family.categories.create!(name: "Filter Other Spending", color: "#222222")
+
+      create_transaction(account: selected, name: "Selected purchase", amount: 1234.56, category: selected_category)
+      create_transaction(account: other, name: "Other purchase", amount: 6543.21, category: other_category)
+
+      [ selected, other, selected_category, other_category ]
+    end
+
     # Takes every fixture investment account out of the card's scope, so an
     # account the test creates is the family's only one; otherwise the
     # fixtures satisfy the visible-accounts gate on their own.

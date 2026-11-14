@@ -6,6 +6,8 @@ class ReportsController < ApplicationController
   skip_authentication only: :export_transactions
   before_action :authenticate_for_export, only: :export_transactions
 
+  helper_method :report_account_ids, :report_filter_accounts
+
   def index
     setup_report_data(show_flash: true)
 
@@ -81,7 +83,8 @@ class ReportsController < ApplicationController
       start_date: params[:start_date],
       end_date: params[:end_date],
       sort_by: params[:sort_by],
-      sort_direction: params[:sort_direction]
+      sort_direction: params[:sort_direction],
+      account_ids: report_account_ids
     }.compact
 
     # The CSV URL the instructions tell people to add their API key to
@@ -114,7 +117,7 @@ class ReportsController < ApplicationController
       @previous_period = build_previous_period
 
       # Get aggregated data
-      @income_statement = Current.family.income_statement(user: Current.user)
+      @income_statement = report_income_statement
       @current_income_totals = @income_statement.income_totals(period: @period)
       @current_expense_totals = @income_statement.expense_totals(period: @period)
 
@@ -216,6 +219,14 @@ class ReportsController < ApplicationController
           collapsible: true
         }
       ]
+
+      # These sections read every account in reports, whatever the account
+      # filter says, and say so while a filter is on.
+      if report_account_ids
+        all_sections.each do |section|
+          section[:pill] = t("reports.index.account_filter.all_accounts") if section[:key].in?(%w[net_worth investment_performance investment_flows])
+        end
+      end
 
       # Order sections according to user preference
       section_order = Current.user.reports_section_order
@@ -327,6 +338,9 @@ class ReportsController < ApplicationController
     end
 
     def calculate_budget_performance
+      # A budget covers the whole household, so it has no figure for a subset of accounts
+      return nil if report_account_ids
+
       # Only calculate if we're looking at current month
       return nil unless @period_type == :monthly && @start_date.beginning_of_month.to_date == Date.current.beginning_of_month.to_date
 
@@ -744,10 +758,7 @@ class ReportsController < ApplicationController
         scope = scope.where(category_id: all_category_ids)
       end
 
-      # Filter by account
-      if params[:filter_account_id].present?
-        scope = scope.where(entries: { account_id: params[:filter_account_id] })
-      end
+      scope = scope.where(entries: { account_id: report_account_ids }) if report_account_ids
 
       # Filter by amount range
       if params[:filter_amount_min].present?
@@ -772,6 +783,36 @@ class ReportsController < ApplicationController
       scope
     rescue Date::Error
       scope
+    end
+
+    # The accounts the account filter offers: the ones that count towards the
+    # income statement, so a selected account never silently computes to zero.
+    def report_filter_accounts
+      @report_filter_accounts ||= Current.family.income_statement(user: Current.user).eligible_accounts.alphabetically.to_a
+    end
+
+    # The ids of the accounts the report is limited to, or nil for all of them.
+    # `filter_account_id` is the older single-account form, which existing
+    # export links still carry. Ids outside report_filter_accounts are dropped,
+    # so the filter can never widen what the user may see.
+    def report_account_ids
+      return @report_account_ids if defined?(@report_account_ids)
+
+      requested = Array(params[:account_ids]).compact_blank.map(&:to_s)
+      requested << params[:filter_account_id].to_s if params[:filter_account_id].present?
+
+      eligible_ids = report_filter_accounts.map { |account| account.id.to_s }
+      selected = eligible_ids & requested
+
+      @report_account_ids = selected.empty? || selected.size == eligible_ids.size ? nil : selected
+    end
+
+    def report_income_statement
+      if report_account_ids
+        Current.family.income_statement(user: Current.user, accounts: Current.family.accounts.where(id: report_account_ids))
+      else
+        Current.family.income_statement(user: Current.user)
+      end
     end
 
     def build_transactions_breakdown_for_export

@@ -34,6 +34,13 @@ en:
       next_year: "Next year"
       previous_decade: "Previous decade"
       next_decade: "Next decade"
+      account_filter:
+        all_accounts: "All accounts"
+        some_accounts:
+          one: "1 account"
+          other: "%{count} accounts"
+        search: "Search accounts"
+        apply: "Apply"
     invalid_date_range: "End date cannot be before start date. The dates have been swapped."
     summary:
       total_income: Total Income

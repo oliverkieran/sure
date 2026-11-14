@@ -9,7 +9,7 @@
         end_date: end_date,
         sort_by: params[:sort_by],
         sort_direction: params[:sort_direction]
-      }.compact
+      }.compact.merge(report_filter_params)
     %>
 
     <%# Export Options %>

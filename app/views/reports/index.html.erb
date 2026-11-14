@@ -18,7 +18,7 @@
       <% end %>
 
       <%# Print Report Button %>
-        <%= link_to print_reports_path(period_type: @period_type, start_date: @start_date, end_date: @end_date),
+        <%= link_to print_reports_path(period_type: @period_type, start_date: @start_date, end_date: @end_date, **report_filter_params),
                   target: "_blank",
                   rel: "noopener",
                   aria: { label: t("reports.index.print_report") },
@@ -29,13 +29,36 @@
     </header>
 
     <%# Period Navigation Tabs %>
-    <div class="flex items-center justify-between gap-4">
+    <div class="flex flex-wrap items-center justify-between gap-4">
       <%= render DS::SegmentedControl.new(aria_label: t("reports.index.period_aria", default: "Report period"), class: "overflow-x-auto no-scrollbar") do |sc| %>
         <% %i[monthly quarterly ytd last_6_months custom].each do |ptype| %>
           <% sc.with_segment(t("reports.index.periods.#{ptype}"),
                active: @period_type == ptype,
-               href: reports_path(period_type: ptype),
+               href: reports_path(period_type: ptype, **report_filter_params),
                class: "whitespace-nowrap") %>
+        <% end %>
+      <% end %>
+
+      <% if report_filter_accounts.size > 1 %>
+        <% selected_account_ids = report_account_ids || report_filter_accounts.map { |account| account.id.to_s } %>
+        <%= render layout: "pages/dashboard/filter_popover", locals: {
+              button_text: report_account_ids ? t("reports.index.account_filter.some_accounts", count: report_account_ids.size) : t("reports.index.account_filter.all_accounts"),
+              search_label: t("reports.index.account_filter.search"),
+              apply_text: t("reports.index.account_filter.apply"),
+              hidden_fields: { period_type: @period_type, start_date: @start_date.iso8601, end_date: @end_date.iso8601 },
+              url: reports_path,
+              form_data: { turbo_action: "advance" }
+            } do %>
+          <% report_filter_accounts.each do |account| %>
+            <%= render layout: "pages/dashboard/filter_popover_option", locals: {
+                  name: "account_ids[]",
+                  value: account.id,
+                  checked: selected_account_ids.include?(account.id.to_s),
+                  filter_name: account.name
+                } do %>
+              <span class="text-sm text-primary truncate"><%= account.name %></span>
+            <% end %>
+          <% end %>
         <% end %>
       <% end %>
     </div>
@@ -44,6 +67,9 @@
     <% if @period_type == :custom %>
       <%= form_with url: reports_path, method: :get, data: { controller: "auto-submit-form" }, class: "flex items-center gap-3 bg-surface-inset p-3 rounded-lg" do |f| %>
         <%= f.hidden_field :period_type, value: :custom %>
+        <% Array(report_account_ids).each do |account_id| %>
+          <%= hidden_field_tag "account_ids[]", account_id, id: nil %>
+        <% end %>
 
         <div class="flex items-center gap-2">
           <label class="text-sm font-medium text-secondary"><%= t("reports.index.date_range.from") %></label>
@@ -74,7 +100,7 @@
               <%= render DS::Link.new(
                 variant: "icon",
                 icon: "chevron-left",
-                href: reports_path(period_type: @period_type, start_date: @nav[:prev_start], end_date: @nav[:prev_end]),
+                href: reports_path(period_type: @period_type, start_date: @nav[:prev_start], end_date: @nav[:prev_end], **report_filter_params),
                 aria: { label: t("reports.index.previous_period"), keyshortcuts: "ArrowLeft" },
                 data: { controller: "hotkey", hotkey: "ArrowLeft" },
               ) %>
@@ -91,7 +117,7 @@
                 <%= render DS::Link.new(
                   variant: "icon",
                   icon: "chevron-right",
-                  href: reports_path(period_type: @period_type, start_date: @nav[:next_start], end_date: @nav[:next_end]),
+                  href: reports_path(period_type: @period_type, start_date: @nav[:next_start], end_date: @nav[:next_end], **report_filter_params),
                   aria: { label: t("reports.index.next_period"), keyshortcuts: "ArrowRight" },
                   data: { controller: "hotkey", hotkey: "ArrowRight" },
                 ) %>
@@ -119,7 +145,7 @@
           <%= render DS::Link.new(
             text: t("reports.index.today"),
             variant: "outline",
-            href: reports_path(period_type: @period_type),
+            href: reports_path(period_type: @period_type, **report_filter_params),
           ) %>
         </div>
       </div>

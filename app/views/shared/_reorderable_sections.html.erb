@@ -3,7 +3,8 @@
     drags to reorder (saved to `url` as preferences.<namespace>_section_order)
     and collapses (saved under <namespace>_collapsed_sections). The collapse
     state posts to the Reports endpoint unless `collapse_url` is given.
-    `i18n_scope` holds the page's `sections_aria` and `section_aria` labels. %>
+    `i18n_scope` holds the page's `sections_aria` and `section_aria` labels.
+    A section's optional `pill` is a short label shown beside its title. %>
 <div data-controller="sortable-list"
      data-sortable-list-url-value="<%= url %>"
      data-sortable-list-param-value="preferences.<%= namespace %>_section_order"
@@ -61,6 +62,9 @@
               </h2>
               <% if section[:preview] %>
                 <%= render DS::Pill.new(label: t("shared.preview")) %>
+              <% end %>
+              <% if section[:pill] %>
+                <%= render DS::Pill.new(label: section[:pill], tone: :neutral, marker: false) %>
               <% end %>
             </div>
             <%# A mouse grab hint. Keys only grab the section itself, so the

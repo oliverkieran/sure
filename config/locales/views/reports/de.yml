@@ -2,6 +2,13 @@
 de:
   reports:
     index:
+      account_filter:
+        all_accounts: Alle Konten
+        some_accounts:
+          one: 1 Konto
+          other: "%{count} Konten"
+        search: Konten suchen
+        apply: Anwenden
       period_aria: Berichtszeitraum
       title: Berichte
       subtitle: Umfassende Einblicke in deine finanzielle Situation
